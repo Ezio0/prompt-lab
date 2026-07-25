@@ -1,6 +1,7 @@
 """Typed records persisted and exchanged by Prompt Lab."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -16,3 +17,17 @@ class Version:
     changed_var: str = "prompt"
     change_note: str = ""
     prompt_file: str | None = None
+
+
+@dataclass(frozen=True)
+class Case:
+    """A reusable prompt input, either ideal-state or a production bad case."""
+
+    id: str
+    type: str
+    input: dict[str, Any]
+    collection: str
+    expected_output: str | None = None
+    expected_output_note: str = ""
+    actual_output: str | None = None
+    issue: str = ""

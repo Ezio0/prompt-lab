@@ -41,3 +41,38 @@ class ProviderResponse:
     prompt_tokens: int
     completion_tokens: int
     finish_reason: str | None
+
+
+@dataclass(frozen=True)
+class ExecutionResult:
+    """Metrics and outcome for one prompt applied to one case."""
+
+    output: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: float = 0.0
+    finish_reason: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    """Baseline and candidate outcomes for a single case."""
+
+    case_id: str
+    baseline: ExecutionResult
+    candidate: ExecutionResult
+
+
+@dataclass(frozen=True)
+class RunResult:
+    """A complete persisted A/B comparison run."""
+
+    run_id: str
+    baseline_version: str
+    candidate_version: str
+    dataset: str
+    provider_config: dict[str, Any]
+    timestamp: str
+    cases: list[CaseResult]
+    summary: dict[str, dict[str, float]]

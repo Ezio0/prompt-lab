@@ -33,7 +33,7 @@ async def test_call_posts_openai_compatible_payload_and_returns_response():
         body = json_body(request)
         assert body["model"] == "override-model"
         assert body["max_tokens"] == 10
-        assert body["thinking"] == "enabled"
+        assert body["thinking"] == {"type": "enabled"}
         return httpx.Response(
             200,
             json={

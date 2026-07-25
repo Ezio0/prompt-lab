@@ -50,11 +50,18 @@ class Provider:
         request_params.update(params)
         model = request_params.pop("model", self.config.model)
         timeout = request_params.pop("timeout_seconds", 60.0)
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            **{key: value for key, value in request_params.items() if value is not None},
         }
+        for key, value in request_params.items():
+            if value is None:
+                continue
+            if key == "thinking" and isinstance(value, str):
+                # DeepSeek expects {"type": "enabled|disabled"}, not a bare string
+                payload["thinking"] = {"type": value}
+            else:
+                payload[key] = value
         url = f"{self.config.base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 

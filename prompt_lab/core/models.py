@@ -31,3 +31,13 @@ class Case:
     expected_output_note: str = ""
     actual_output: str | None = None
     issue: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderResponse:
+    """Normalized OpenAI-compatible completion response."""
+
+    content: str
+    prompt_tokens: int
+    completion_tokens: int
+    finish_reason: str | None

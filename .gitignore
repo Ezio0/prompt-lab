@@ -12,3 +12,4 @@ venv/
 *.db
 data/
 .DS_Store
+venv/

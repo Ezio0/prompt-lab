@@ -87,8 +87,8 @@ def _mount_static(app: FastAPI, project_root: Path) -> None:
             name="assets",
         )
 
-        @app.get("/{path:path}")
-        def spa_fallback(path: str) -> JSONResponse | FileResponse:  # type: ignore[no-untyped-def]
+        @app.get("/{path:path}", response_model=None)
+        def spa_fallback(path: str):  # type: ignore[no-untyped-def]
             """Serve a static file, or fall back to index.html for SPA routes."""
             # Never intercept API routes.
             if path.startswith("api/"):

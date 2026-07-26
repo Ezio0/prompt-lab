@@ -12,7 +12,7 @@ import yaml
 
 from prompt_lab.core.case_manager import CaseManager, CaseManagerError
 from prompt_lab.core.config import Config, ConfigError
-from prompt_lab.core.models import Case, CaseResult, ExecutionResult, RunResult
+from prompt_lab.core.models import Case, CaseResult, EvalResult, ExecutionResult, RunResult
 from prompt_lab.core.provider import Provider
 from prompt_lab.core.report import ReportBuilder
 from prompt_lab.core.run_engine import RunEngine
@@ -200,6 +200,7 @@ def import_cases(file_path: Path, collection: str) -> None:
 @click.option("--max-tokens", type=int, default=None)
 @click.option("--thinking", type=click.Choice(["enabled", "disabled"]), default=None)
 @click.option("--concurrency", type=click.IntRange(min=1), default=None)
+@click.option("--eval", "run_eval", is_flag=True, default=False, help="Enable quality evaluation (requires DeepEval).")
 def run(
     baseline: str,
     candidate: str,
@@ -208,6 +209,7 @@ def run(
     max_tokens: int | None,
     thinking: str | None,
     concurrency: int | None,
+    run_eval: bool,
 ) -> None:
     """Run an A/B comparison for two versions on a case collection."""
     root = Path.cwd()
@@ -223,8 +225,33 @@ def run(
             )
         run_config = config.run if concurrency is None else type(config.run)(config.run.timeout_seconds, concurrency)
         params = {key: value for key, value in {"model": model, "max_tokens": max_tokens, "thinking": thinking}.items() if value is not None}
+
+        # Build evaluator if --eval is requested
+        evaluator = None
+        if run_eval:
+            from prompt_lab.core.eval_model import is_deepeval_available
+            if not is_deepeval_available():
+                raise click.ClickException(
+                    "E_EVAL_NOT_INSTALLED: evaluation requires DeepEval. "
+                    "Install with: pip install prompt-lab[eval]"
+                )
+            if not config.eval.metrics:
+                raise click.ClickException(
+                    "E_CONFIG_INVALID: no eval metrics configured in prompt-lab.yaml"
+                )
+            from prompt_lab.core.eval_model import CustomModel
+            from prompt_lab.core.evaluator import Evaluator
+            eval_model = CustomModel(
+                model=config.eval.model,
+                base_url=config.provider.base_url,
+                api_key=config.provider.api_key,
+            )
+            evaluator = Evaluator(config.eval, eval_model)
+
         result = asyncio.run(
-            RunEngine(Provider(config.provider), run_config, project_root=root).run(
+            RunEngine(
+                Provider(config.provider), run_config, project_root=root, evaluator=evaluator
+            ).run(
                 baseline_version.prompt_text,
                 candidate_version.prompt_text,
                 case_set,
@@ -232,6 +259,7 @@ def run(
                 candidate_version=candidate,
                 dataset=dataset,
                 provider_params=params,
+                run_eval=run_eval,
             )
         )
     except click.ClickException:
@@ -257,7 +285,8 @@ def run(
 @cli.command()
 @click.argument("run_id")
 @click.option("--format", "output_format", type=click.Choice(["table", "json"]), default="table")
-def compare(run_id: str, output_format: str) -> None:
+@click.option("--eval-only", is_flag=True, default=False, help="Show only evaluation metrics.")
+def compare(run_id: str, output_format: str, eval_only: bool) -> None:
     """Generate a comparison report for RUN_ID."""
     result_path = Path.cwd() / ".prompt-lab" / "runs" / run_id / "result.json"
     if not result_path.is_file():
@@ -266,7 +295,10 @@ def compare(run_id: str, output_format: str) -> None:
         result = _run_result_from_json(result_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise click.ClickException(f"invalid run result: {error}") from error
-    output = ReportBuilder.build_json(result) if output_format == "json" else ReportBuilder.build_table(result)
+    if eval_only:
+        output = ReportBuilder.build_eval_summary(result)
+    else:
+        output = ReportBuilder.build_json(result) if output_format == "json" else ReportBuilder.build_table(result)
     click.echo(output)
 
 
@@ -290,6 +322,16 @@ def _run_result_from_json(contents: str) -> RunResult:
             case_id=item["case_id"],
             baseline=ExecutionResult(**item["baseline"]),
             candidate=ExecutionResult(**item["candidate"]),
+            evaluations=[
+                EvalResult(
+                    metric_name=ev["metric_name"],
+                    score=ev["score"],
+                    reason=ev.get("reason", ""),
+                    status=ev["status"],
+                    error=ev.get("error"),
+                )
+                for ev in item.get("evaluations", [])
+            ],
         )
         for item in data["cases"]
     ]
@@ -303,6 +345,21 @@ def _run_result_from_json(contents: str) -> RunResult:
         cases=cases,
         summary=data["summary"],
     )
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
+@click.option("--port", default=8765, type=click.IntRange(min=1, max=65535), help="Bind port (default: 8765).")
+def serve(host: str, port: int) -> None:
+    """Start the web API server (FastAPI + Uvicorn)."""
+    import uvicorn
+
+    from prompt_lab.web.server import create_app
+
+    project_root = Path.cwd()
+    click.echo(f"Starting Prompt Lab web server on http://{host}:{port}")
+    click.echo(f"Project root: {project_root}")
+    uvicorn.run(create_app(project_root), host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

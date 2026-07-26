@@ -37,11 +37,31 @@ class RunConfig:
 
 
 @dataclass(frozen=True)
+class EvalMetricConfig:
+    """A single evaluation metric configuration."""
+
+    name: str
+    params: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    """Evaluation engine configuration."""
+
+    enabled: bool
+    metrics: list[EvalMetricConfig]
+    model: str
+    api_key_env: str
+    api_key: str
+
+
+@dataclass(frozen=True)
 class Config:
     """Full project configuration."""
 
     provider: ProviderConfig
     run: RunConfig
+    eval: EvalConfig
 
     @classmethod
     def load(cls, project_root: Path) -> "Config":
@@ -76,6 +96,8 @@ class Config:
         if not api_key:
             raise ConfigError(f"environment variable '{api_key_env}' is not set")
 
+        eval_config = cls._load_eval(raw, provider_data)
+
         return cls(
             provider=ProviderConfig(
                 base_url=base_url.rstrip("/"),
@@ -85,6 +107,43 @@ class Config:
                 default_params=dict(default_params),
             ),
             run=RunConfig(timeout_seconds=timeout_seconds, concurrency=concurrency),
+            eval=eval_config,
+        )
+
+    @staticmethod
+    def _load_eval(raw: dict[str, Any], provider_data: dict[str, Any]) -> "EvalConfig":
+        """Parse the optional eval block from raw config."""
+        eval_data = raw.get("eval")
+        if not isinstance(eval_data, dict):
+            return EvalConfig(
+                enabled=False,
+                metrics=[],
+                model="",
+                api_key_env="",
+                api_key="",
+            )
+
+        enabled = bool(eval_data.get("enabled", False))
+        model = eval_data.get("model", provider_data.get("model", ""))
+        api_key_env = eval_data.get("api_key_env", provider_data.get("api_key_env", ""))
+        api_key = os.environ.get(api_key_env, "") if api_key_env else ""
+
+        raw_metrics = eval_data.get("metrics", [])
+        metrics = [
+            EvalMetricConfig(
+                name=m.get("name", ""),
+                params=m.get("params", {}),
+            )
+            for m in raw_metrics
+            if isinstance(m, dict) and m.get("name")
+        ]
+
+        return EvalConfig(
+            enabled=enabled,
+            metrics=metrics,
+            model=model,
+            api_key_env=api_key_env,
+            api_key=api_key,
         )
 
 

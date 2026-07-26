@@ -83,6 +83,59 @@ class ReportBuilder:
         return json.dumps(asdict(run_result), ensure_ascii=False, indent=2)
 
     @staticmethod
+    def build_eval_summary(run_result: RunResult) -> str:
+        """Render eval-only summary table."""
+        console = Console(record=True, width=140, force_terminal=False, color_system=None)
+        console.print(f"Eval Summary for Run {run_result.run_id}: {run_result.baseline_version} → {run_result.candidate_version}")
+
+        eval_summary = run_result.summary.get("eval_summary", {})
+        if not eval_summary:
+            console.print("No evaluation data in this run.")
+            return console.export_text()
+
+        table = Table(title="Evaluation Summary")
+        for column in ("Metric", f"Baseline ({run_result.baseline_version})", f"Candidate ({run_result.candidate_version})", "Delta"):
+            table.add_column(column)
+
+        baseline_evals = eval_summary.get("baseline", {})
+        candidate_evals = eval_summary.get("candidate", {})
+        all_metrics = sorted(set(list(baseline_evals.keys()) + list(candidate_evals.keys())))
+
+        for metric in all_metrics:
+            b_data = baseline_evals.get(metric, {})
+            c_data = candidate_evals.get(metric, {})
+            b_score = b_data.get("avg", 0.0)
+            c_score = c_data.get("avg", 0.0)
+            table.add_row(
+                metric,
+                f"{b_score:.3f}" if b_data else "n/a",
+                f"{c_score:.3f}" if c_data else "n/a",
+                ReportBuilder.delta(b_score, c_score),
+            )
+        console.print(table)
+
+        # Per-case eval detail
+        detail_table = Table(title="Per-case Evaluation")
+        for column in ("Case", "Metric", "Baseline", "Candidate", "Status"):
+            detail_table.add_column(column)
+
+        for case in run_result.cases:
+            half = len(case.evaluations) // 2
+            for i, ev in enumerate(case.evaluations):
+                version = "baseline" if i < half else "candidate"
+                score_str = f"{ev.score:.3f}" if ev.status == "pass" else ev.status
+                detail_table.add_row(
+                    case.case_id,
+                    ev.metric_name,
+                    score_str if version == "baseline" else "",
+                    score_str if version == "candidate" else "",
+                    ev.status,
+                )
+
+        console.print(detail_table)
+        return console.export_text()
+
+    @staticmethod
     def delta(baseline: float, candidate: float) -> str:
         """Format the relative difference between two metrics."""
         if baseline == 0:

@@ -1,6 +1,6 @@
 """Typed records persisted and exchanged by Prompt Lab."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -56,12 +56,24 @@ class ExecutionResult:
 
 
 @dataclass(frozen=True)
+class EvalResult:
+    """One metric evaluation outcome for one case-version pair."""
+
+    metric_name: str
+    score: float
+    reason: str
+    status: str               # "pass" | "skipped" | "error"
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class CaseResult:
     """Baseline and candidate outcomes for a single case."""
 
     case_id: str
     baseline: ExecutionResult
     candidate: ExecutionResult
+    evaluations: list[EvalResult] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

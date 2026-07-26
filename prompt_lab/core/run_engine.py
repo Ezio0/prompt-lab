@@ -9,7 +9,8 @@ import time
 from typing import Any, Protocol
 
 from prompt_lab.core.config import RunConfig
-from prompt_lab.core.models import Case, CaseResult, ExecutionResult, ProviderResponse, RunResult
+from prompt_lab.core.evaluator import Evaluator
+from prompt_lab.core.models import Case, CaseResult, EvalResult, ExecutionResult, ProviderResponse, RunResult
 from prompt_lab.core.provider import ProviderError
 
 
@@ -23,11 +24,13 @@ class RunEngine:
     """Run two prompts against a case set and retain audit records locally."""
 
     def __init__(
-        self, provider: ProviderProtocol, config: RunConfig, *, project_root: Path | None = None
+        self, provider: ProviderProtocol, config: RunConfig, *, project_root: Path | None = None,
+        evaluator: Evaluator | None = None,
     ) -> None:
         self.provider = provider
         self.config = config
         self.project_root = project_root or Path.cwd()
+        self.evaluator = evaluator
 
     async def run(
         self,
@@ -39,6 +42,7 @@ class RunEngine:
         candidate_version: str = "",
         dataset: str = "",
         provider_params: dict[str, Any] | None = None,
+        run_eval: bool = False,
     ) -> RunResult:
         """Execute a resilient A/B comparison and save ``result.json`` and events."""
         started = time.perf_counter()
@@ -50,13 +54,31 @@ class RunEngine:
 
         async def process(case: Case) -> CaseResult:
             async with semaphore:
-                return await self._run_case(case, baseline_prompt, candidate_prompt, params)
+                return await self._run_case(
+                    case, baseline_prompt, candidate_prompt, params, run_eval
+                )
 
         case_results = list(await asyncio.gather(*(process(case) for case in cases)))
         summary = {
             "baseline": self._summary([case.baseline for case in case_results]),
             "candidate": self._summary([case.candidate for case in case_results]),
         }
+
+        # Compute eval summary if any evaluations exist
+        eval_summary: dict[str, Any] = {}
+        if any(c.evaluations for c in case_results):
+            # Split evaluations: baseline first half, candidate second half per case
+            baseline_evals: list[EvalResult] = []
+            candidate_evals: list[EvalResult] = []
+            for case in case_results:
+                half = len(case.evaluations) // 2
+                baseline_evals.extend(case.evaluations[:half])
+                candidate_evals.extend(case.evaluations[half:])
+            eval_summary = {
+                "baseline": Evaluator.compute_eval_summary(baseline_evals),
+                "candidate": Evaluator.compute_eval_summary(candidate_evals),
+            }
+
         result = RunResult(
             run_id=run_id,
             baseline_version=baseline_version,
@@ -65,7 +87,7 @@ class RunEngine:
             provider_config=self._provider_config(params),
             timestamp=timestamp,
             cases=case_results,
-            summary=summary,
+            summary={"baseline": summary["baseline"], "candidate": summary["candidate"], "eval_summary": eval_summary} if eval_summary else summary,
         )
         self._write_result(run_dir, result)
         self._write_events(run_dir, result, duration_ms=(time.perf_counter() - started) * 1000)
@@ -77,10 +99,29 @@ class RunEngine:
         baseline_prompt: str,
         candidate_prompt: str,
         params: dict[str, Any],
+        run_eval: bool = False,
     ) -> CaseResult:
         baseline = await self._execute(baseline_prompt, case, params)
         candidate = await self._execute(candidate_prompt, case, params)
-        return CaseResult(case_id=case.id, baseline=baseline, candidate=candidate)
+
+        evaluations: list[EvalResult] = []
+        if run_eval and self.evaluator is not None:
+            # Evaluate only if both outputs are non-empty
+            if baseline.output and candidate.output:
+                try:
+                    evaluations = self.evaluator.evaluate(
+                        case, baseline.output, candidate.output
+                    )
+                except Exception:
+                    # Evaluation errors are non-blocking; already caught per-metric
+                    pass
+
+        return CaseResult(
+            case_id=case.id,
+            baseline=baseline,
+            candidate=candidate,
+            evaluations=evaluations,
+        )
 
     async def _execute(self, template: str, case: Case, params: dict[str, Any]) -> ExecutionResult:
         try:

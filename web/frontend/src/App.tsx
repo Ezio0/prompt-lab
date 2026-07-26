@@ -1,122 +1,70 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+/**
+ * App — top-level shell with nav + React Router routes.
+ *
+ * Routes:
+ *   /versions        — version list
+ *   /versions/:id    — version detail
+ *   /runs            — run list
+ *   /runs/:id        — run report
+ *   /editor          — prompt editor
+ *   /                — redirect to /versions
+ */
+import type { ReactNode } from "react";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import VersionList from "./pages/VersionList";
+import VersionDetail from "./pages/VersionDetail";
+import RunList from "./pages/RunList";
+import RunReport from "./pages/RunReport";
+import PromptEditor from "./pages/PromptEditor";
 
-function App() {
-  const [count, setCount] = useState(0)
-
+function NavLink({ to, label }: { to: string; label: string }): ReactNode {
+  const { pathname } = useLocation();
+  const active = pathname === to || pathname.startsWith(to + "/");
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <Link
+      to={to}
+      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? "bg-[var(--accent-soft)] text-indigo-300"
+          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+      }`}
+    >
+      {label}
+    </Link>
+  );
 }
 
-export default App
+function Layout(): ReactNode {
+  return (
+    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/90 px-6 backdrop-blur">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-semibold tracking-tight text-indigo-400">
+            prompt-lab
+          </span>
+          <span className="text-xs text-[var(--text-muted)]">v2.0</span>
+        </div>
+        <nav className="flex items-center gap-1">
+          <NavLink to="/versions" label="Versions" />
+          <NavLink to="/runs" label="Runs" />
+          <NavLink to="/editor" label="Editor" />
+        </nav>
+      </header>
+      <main className="mx-auto w-full max-w-6xl px-6 py-6">
+        <Routes>
+          <Route path="/" element={<Navigate to="/versions" replace />} />
+          <Route path="/versions" element={<VersionList />} />
+          <Route path="/versions/:id" element={<VersionDetail />} />
+          <Route path="/runs" element={<RunList />} />
+          <Route path="/runs/:id" element={<RunReport />} />
+          <Route path="/editor" element={<PromptEditor />} />
+          <Route path="*" element={<Navigate to="/versions" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+export default function App(): ReactNode {
+  return <Layout />;
+}

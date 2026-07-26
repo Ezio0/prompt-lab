@@ -5,6 +5,7 @@ __pycache__/
 .coverage
 *.egg-info/
 dist/
+!web/frontend/dist/
 build/
 .env
 venv/
